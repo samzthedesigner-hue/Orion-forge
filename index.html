@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ORION FORGE V2</title>
+  <title>ORION FORGE V2.1</title>
   <meta name="theme-color" content="#0a0a0a">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -68,13 +68,13 @@
 </head>
 <body>
   <div class="header">
-    <h1>ORION FORGE V2</h1>
+    <h1>ORION FORGE V2.1</h1>
     <p>Powered by Groq Llama 3.3</p>
   </div>
 
   <div class="chat" id="chat">
     <div class="msg ai">
-      ORION FORGE V2 Online. I build real apps from text. 
+      ORION FORGE V2.1 Online. I build real apps from text. 
       Try a template below or describe what you want.
     </div>
   </div>
@@ -88,8 +88,8 @@
 
   <div class="output" id="output">
     <div class="tabs">
-      <button class="tab active" onclick="switchTab('preview')">Preview</button>
-      <button class="tab" onclick="switchTab('code')">Code</button>
+      <button class="tab active" onclick="switchTab('preview', this)">Preview</button>
+      <button class="tab" onclick="switchTab('code', this)">Code</button>
     </div>
     <div class="tab-content active" id="preview-tab">
       <iframe id="preview-frame" sandbox="allow-scripts"></iframe>
@@ -180,7 +180,10 @@ async function forge() {
       })
     });
     
-    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(`API Error ${response.status}: ${errData.error?.message || response.statusText}`);
+    }
     
     const data = await response.json();
     currentCode = data.choices[0].message.content;
@@ -195,7 +198,7 @@ async function forge() {
     
   } catch (err) {
     removeLoadingMessage();
-    addMessage(`Forge failed: ${err.message}. Check your API key or try again.`);
+    addMessage(`Forge failed: ${err.message}. Try a different prompt or check if Groq blocked it.`);
   } finally {
     btn.disabled = false;
   }
@@ -208,10 +211,11 @@ function showOutput() {
   switchTab('preview');
 }
 
-function switchTab(tab) {
+function switchTab(tab, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  event.target.classList.add('active');
+  if (el) el.classList.add('active');
+  else document.querySelector(`.tab[onclick*="${tab}"]`).classList.add('active');
   document.getElementById(`${tab}-tab`).classList.add('active');
 }
 
@@ -242,7 +246,6 @@ function saveToHistory(prompt, code) {
   localStorage.setItem('orion_history', JSON.stringify(history));
 }
 
-// Load history on startup
 window.onload = () => {
   const history = JSON.parse(localStorage.getItem('orion_history') || '[]');
   if (history.length > 0) {
