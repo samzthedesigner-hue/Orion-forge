@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S IDE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
+    <style>
+        body { background: #0a0a0a; color: #00ff41; font-family: 'Courier New', monospace; }
+       .jarvis-glow { text-shadow: 0 0 10px #00ff41; }
+        #editor { height: 400px; border: 1px solid #00ff41; }
+       .terminal { background: #000; color: #00ff41; height: 200px; overflow-y: auto; padding: 10px; }
+    </style>
+</head>
+<body class="p-4">
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-3xl font-bold jarvis-glow mb-4">J.A.R.V.I.S IDE</h1>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <!-- Left: Projects + Files -->
+            <div class="lg:col-span-1 space-y-4">
+                <div class="border border-green-500 p-3">
+                    <h2 class="font-bold mb-2">Projects</h2>
+                    <div class="flex gap-2 mb-2">
+                        <input id="projectName" placeholder="New project name" class="bg-black border border-green-500 px-2 py-1 flex-1">
+                        <button onclick="createProject()" class="bg-green-900 px-3 py-1 border border-green-500">+</button>
+                    </div>
+                    <div id="projectList"></div>
+                </div>
+                
+                <div class="border border-green-500 p-3">
+                    <h2 class="font-bold mb-2">Files</h2>
+                    <div id="fileList"></div>
+                    <button onclick="addFile()" class="mt-2 bg-green-900 px-3 py-1 border border-green-500 w-full">+ Add File</button>
+                </div>
+                
+                <div class="border border-green-500 p-3">
+                    <h2 class="font-bold mb-2">Git</h2>
+                    <input id="gitCmd" placeholder="git status" class="bg-black border border-green-500 px-2 py-1 w-full mb-2">
+                    <button onclick="runGit()" class="bg-green-900 px-3 py-1 border border-green-500 w-full">Run</button>
+                    <pre id="gitOutput" class="text-xs mt-2 h-24 overflow-y-auto"></pre>
+                </div>
+            </div>
+            
+            <!-- Center: Editor + Terminal -->
+            <div class="lg:col-span-2 space-y-4">
+                <div class="border border-green-500 p-3">
+                    <div class="flex justify-between mb-2">
+                        <h2 class="font-bold">Editor: <span id="currentFile">main.py</span></h2>
+                        <div class="flex gap-2">
+                            <select id="language" class="bg-black border border-green-500 px-2 py-1">
+                                <option value="python">Python</option>
+                                <option value="java">Java</option>
+                            </select>
+                            <button onclick="runCode()" class="bg-green-900 px-3 py-1 border border-green-500">Run</button>
+                            <button onclick="saveFiles()" class="bg-blue-900 px-3 py-1 border border-blue-500">Save</button>
+                        </div>
+                    </div>
+                    <div id="editor"></div>
+                </div>
+                
+                <div class="border border-green-500 p-3">
+                    <h2 class="font-bold mb-2">Terminal Output</h2>
+                    <pre id="terminal" class="terminal"></pre>
+                </div>
+                
+                <div class="border border-green-500 p-3">
+                    <div class="flex justify-between mb-2">
+                        <h2 class="font-bold">J.A.R.V.I.S AI</h2>
+                        <button id="micBtn" onclick="toggleMic()" class="bg-red-900 px-3 py-1 border border-red-500">🎤 Mic Off</button>
+                    </div>
+                    <div id="chat" class="h-48 overflow-y-auto mb-2 border border-green-800 p-2"></div>
+                    <div class="flex gap-2">
+                        <input id="chatInput" placeholder="Ask J.A.R.V.I.S..." class="bg-black border border-green-500 px-2 py-1 flex-1" onkeypress="if(event.key==='Enter')askAI()">
+                        <button onclick="askAI()" class="bg-green-900 px-3 py-1 border border-green-500">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+let editor, currentProject = null, currentFile = 'main.py', files = {};
+let socket = io();
+let recognition, micOn = false;
+
+require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@0.45.0/min/vs' }});
+require(['vs/editor/editor.main'], function () {
+    editor = monaco.editor.create(document.getElementById('editor'), {
+        value: 'print("Hello J.A.R.V.I.S")',
+        language: 'python',
+        theme: 'vs-dark',
+        automaticLayout: true
+    });
+    editor.onDidChangeModelContent(() => {
+        files[currentFile] = editor.getValue();
+    });
+    loadProjects();
+});
+
+async function loadProjects() {
+    const res = await fetch('/api/projects');
+    const projects = await res.json();
+    document.getElementById('projectList').innerHTML = projects.map(p => 
+        `<div class="cursor-pointer hover:bg-green-900 p-1" onclick="loadProject('${p.id}')">${p.name}</div>`
+    ).join('');
+    if(projects.length &&!currentProject) loadProject(projects[0].id);
+}
+
+async function createProject() {
+    const name = document.getElementById('projectName').value;
+    if(!name) return;
+    const res = await fetch('/api/projects', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name})
+    });
+    const proj = await res.json();
+    document.getElementById('projectName').value = '';
+    loadProjects();
+    loadProject(proj.id);
+}
+
+async function loadProject(id) {
+    currentProject = id;
+    const res = await fetch(`/api/project/${id}`);
+    files = await res.json();
+    renderFileList();
+    currentFile = Object.keys(files)[0] || 'main.py';
+    editor.setValue(files[currentFile] || '');
+    monaco.editor.setModelLanguage(editor.getModel(), currentFile.endsWith('.java')? 'java' : 'python');
+    loadChat();
+    socket.emit('terminal_start', {project_id: id});
+}
+
+function renderFileList() {
+    document.getElementById('fileList').innerHTML = Object.keys(files).map(f => 
+        `<div class="cursor-pointer hover:bg-green-900 p-1 ${f===currentFile?'bg-green-800':''}" onclick="openFile('${f}')">${f}</div>`
+    ).join('');
+}
+
+function openFile(filename) {
+    files[currentFile] = editor.getValue();
+    currentFile = filename;
+    editor.setValue(files[currentFile]);
+    document.getElementById('currentFile').textContent = filename;
+    monaco.editor.setModelLanguage(editor.getModel(), filename.endsWith('.java')? 'java' : 'python');
+    renderFileList();
+}
+
+function addFile() {
+    const name = prompt('File name: main.py or Main.java');
+    if(name) { files[name] = ''; openFile(name); renderFileList(); }
+}
+
+async function saveFiles() {
+    files[currentFile] = editor.getValue();
+    await fetch(`/api/project/${currentProject}`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({files})
+    });
+    addTerminalLog('Files saved');
+}
+
+async function runCode() {
+    await saveFiles();
+    const res = await fetch('/api/run', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            language: document.getElementById('language').value,
+            project_id: currentProject,
+            main_file: currentFile
+        })
+    });
+    const data = await res.json();
+    addTerminalLog(data.output);
+}
+
+async function runGit() {
+    const cmd = document.getElementById('gitCmd').value;
+    const res = await fetch('/api/git', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({project_id: currentProject, cmd})
+    });
+    const data = await res.json();
+    document.getElementById('gitOutput').textContent = data.output;
+}
+
+async function askAI() {
+    const input = document.getElementById('chatInput');
+    const prompt = input.value;
+    if(!prompt) return;
+    input.value = '';
+    addChat('user', prompt);
+    const res = await fetch('/api/ask', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({prompt, project_id: currentProject})
+    });
+    const data = await res.json();
+    addChat('assistant', `[${data.provider}] ${data.reply}`);
+    speak(data.reply);
+}
+
+async function loadChat() {
+    if(!currentProject) return;
+    const res = await fetch(`/api/chat/${currentProject}`);
+    const chats = await res.json();
+    document.getElementById('chat').innerHTML = chats.map(c => 
+        `<div class="mb-1"><b>${c.role==='user'?'You':'J.A.R.V.I.S'}:</b> ${c.content}</div>`
+    ).join('');
+}
+
+function addChat(role, content) {
+    const chat = document.getElementById('chat');
+    chat.innerHTML += `<div class="mb-1"><b>${role==='user'?'You':'J.A.R.V.I.S'}:</b> ${content}</div>`;
+    chat.scrollTop = chat.scrollHeight;
+}
+
+function addTerminalLog(text) {
+    const term = document.getElementById('terminal');
+    term.textContent += text + '\n';
+    term.scrollTop = term.scrollHeight;
+}
+
+socket.on('terminal_output', (data) => {
+    addTerminalLog(data.data);
+});
+
+function toggleMic() {
+    if(!('webkitSpeechRecognition' in window)) {
+        alert('Speech recognition not supported. Use Chrome.');
+        return;
+    }
+    if(!micOn) {
+        recognition = new webkitSpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = false;
+        recognition.onresult = (e) => {
+            const text = e.results[e.results.length-1][0].transcript;
+            if(text.toLowerCase().includes('hey jarvis')) {
+                document.getElementById('chatInput').value = text.replace(/hey jarvis/gi, '').trim();
+                askAI();
+            }
+        };
+        recognition.start();
+        micOn = true;
+        document.getElementById('micBtn').textContent = '🎤 Listening';
+        document.getElementById('micBtn').classList.replace('bg-red-900', 'bg-green-900');
+    } else {
+        recognition.stop();
+        micOn = false;
+        document.getElementById('micBtn').textContent = '🎤 Mic Off';
+        document.getElementById('micBtn').classList.replace('bg-green-900', 'bg-red-900');
+    }
+}
+
+function speak(text) {
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 1.1;
+    speechSynthesis.speak(utter);
+}
+</script>
+</body>
+  </html>
