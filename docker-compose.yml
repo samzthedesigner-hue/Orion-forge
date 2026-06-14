@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  jarvis-ide:
+    build:.
+    ports:
+      - "8080:8080"
+    volumes:
+      -./workspace:/app/workspace
+      -./data:/app/data
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
