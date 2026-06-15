@@ -1,6 +1,14 @@
-FROM eclipse-temurin:17-jdk-jammy
+FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# Install Java 17 + git
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-17-jdk \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Java env vars so J.A.R.V.I.S can find it
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH=$JAVA_HOME/bin:$PATH
 
 WORKDIR /app
 COPY requirements.txt .
