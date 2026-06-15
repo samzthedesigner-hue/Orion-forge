@@ -1,7 +1,7 @@
-flask
-flask-socketio
-openai
-requests
-groq
-gunicorn
-eventlet
+Flask==3.0.3
+Flask-SocketIO==5.3.6
+gunicorn==21.2.0
+eventlet==0.33.3
+openai==1.35.13
+requests==2.32.3
+groq==0.9.0
